@@ -1,7 +1,7 @@
 import $ from 'jquery';
 import _ from 'lodash';
 import DomainSelectAutoComplete from 'vj/components/autocomplete/DomainSelectAutoComplete';
-import { ActionDialog, ConfirmDialog } from 'vj/components/dialog';
+import { ActionDialog, ConfirmDialog, Dialog } from 'vj/components/dialog';
 import Dropdown from 'vj/components/dropdown/Dropdown';
 import createHint from 'vj/components/hint';
 import Notification from 'vj/components/notification';
@@ -15,11 +15,6 @@ const categories = {};
 const dirtyCategories = [];
 const selections = [];
 const list = [];
-const selectedDescriptors = {
-  type: new Set(),
-  difficulty: new Set(),
-  tags: {},
-};
 
 function setDomSelected($dom, selected) {
   if (selected) $dom.addClass('selected');
@@ -30,7 +25,7 @@ async function updateSelection(sendRequest = true) {
   dirtyCategories.forEach(({ type, category, subcategory }) => {
     let item = categories[category];
     const isSelected = item.select || _.some(item.children, (c) => c.select);
-    setDomSelected(item.$tag, isSelected);
+    item.$tag.forEach((i) => setDomSelected(i, isSelected));
     if (isSelected) {
       selections.push(category);
     } else {
@@ -38,7 +33,7 @@ async function updateSelection(sendRequest = true) {
     }
     if (type === 'subcategory') {
       item = categories[category].children[subcategory];
-      setDomSelected(item.$tag, item.select);
+      item.$tag.forEach((i) => setDomSelected(i, item.select));
       const selectionName = subcategory;
       if (item.select) {
         selections.push(selectionName);
@@ -76,7 +71,7 @@ function buildCategoryFilter() {
     const $categoryTag = $category
       .find('.section__title a')
       .remove()
-      .attr('class', 'widget--category-filter__category-tag');
+      .attr('class', 'category-filter__category-tag');
     const categoryText = $categoryTag.text();
     const $drop = $category
       .children('.chip-list')
@@ -84,7 +79,7 @@ function buildCategoryFilter() {
       .attr('class', 'widget--category-filter__drop');
     const treeItem = {
       select: false,
-      $tag: $categoryTag,
+      $tag: [$categoryTag],
       children: {},
     };
     categories[categoryText] = treeItem;
@@ -93,13 +88,13 @@ function buildCategoryFilter() {
       $categoryTag.text(`${$categoryTag.text()}`);
       const $subCategoryTags = $drop
         .children('li')
-        .attr('class', 'widget--category-filter__subcategory')
+        .attr('class', 'category-filter__subcategory')
         .find('a')
-        .attr('class', 'widget--category-filter__subcategory-tag')
+        .attr('class', 'category-filter__subcategory-tag')
         .attr('data-category', categoryText);
       $subCategoryTags.get().forEach((subCategoryTag) => {
-        const $tag = $(subCategoryTag);
-        treeItem.children[$tag.text()] = {
+        const $tag = [$(subCategoryTag)];
+        treeItem.children[$(subCategoryTag).text()] = {
           select: false,
           $tag,
         };
@@ -112,35 +107,68 @@ function buildCategoryFilter() {
   });
   list.push(...Object.keys(categories));
   list.push(..._.flatMap(Object.values(categories), (c) => Object.keys(c.children)));
-  $(document).on('click', '.widget--category-filter__category-tag', (ev) => {
-    if (ev.shiftKey || ev.metaKey || ev.ctrlKey) return;
-    const category = $(ev.currentTarget).text();
-    const treeItem = categories[category];
-    // the effect should be cancelSelect if it is shown as selected when clicking
-    const shouldSelect = treeItem.$tag.hasClass('selected') ? false : !treeItem.select;
-    treeItem.select = shouldSelect;
-    dirtyCategories.push({ type: 'category', category });
-    if (!shouldSelect) {
-      // de-select children
-      _.forEach(treeItem.children, (treeSubItem, subcategory) => {
-        if (treeSubItem.select) {
-          treeSubItem.select = false;
-          dirtyCategories.push({ type: 'subcategory', subcategory, category });
-        }
-      });
-    }
-    updateSelection();
-    ev.preventDefault();
+}
+
+const tagDialog = new Dialog({
+  $body: $('.dialog--category-filter > div'),
+  cancelByClickingBack: true,
+  cancelByEsc: true,
+});
+
+function clearSelectedProblemTagCategory() {
+  const $problemTagCategoryContainer = tagDialog.$dom.find('[data-category-tab-container]');
+  if (!$problemTagCategoryContainer) return;
+  $problemTagCategoryContainer.children().removeClass('selected');
+
+  const $problemTagContainer = tagDialog.$dom.find('[data-category-container]');
+  if (!$problemTagContainer) return;
+  $problemTagContainer.addClass('hide');
+}
+
+function selectProblemTagCategory(ele) {
+  clearSelectedProblemTagCategory();
+  const value = $(ele).attr('data-category-tab');
+  if (!value) return;
+  $(ele).addClass('selected');
+  const $problemTagContainer = tagDialog.$dom.find(`[data-category-container="${value}"]`);
+  if (!$problemTagContainer) return;
+  $problemTagContainer.removeClass('hide');
+}
+
+tagDialog.clear = function () {
+  selectProblemTagCategory(this.$dom.find('[data-category-tab-container]').children().first());
+  return this;
+};
+
+function buildDisplayCategory() {
+  const $displayCategoryContainer = $('[data-display-category-container]');
+  if (!$displayCategoryContainer.length) return;
+  $displayCategoryContainer.get().forEach((container) => {
+    $(container).find('.category-filter__subcategory-tag').get().forEach((subcategory) => {
+      const $tag = $(subcategory);
+      const categoryText = $tag.attr('data-category');
+      const subcategoryText = $tag.attr('data-subcategory');
+      categories[categoryText].children[subcategoryText].$tag.push($tag);
+    });
   });
-  $(document).on('click', '.widget--category-filter__subcategory-tag', (ev) => {
-    if (ev.shiftKey || ev.metaKey || ev.ctrlKey) return;
-    const subcategory = $(ev.currentTarget).text();
-    const category = $(ev.currentTarget).attr('data-category');
-    const treeItem = categories[category].children[subcategory];
-    treeItem.select = !treeItem.select;
-    dirtyCategories.push({ type: 'subcategory', subcategory, category });
-    updateSelection();
-    ev.preventDefault();
+}
+
+function buildCategoryDialog() {
+  const $problemTagCategoryContainer = tagDialog.$dom.find('[data-category-tab-container]');
+  if (!$problemTagCategoryContainer) return;
+  $problemTagCategoryContainer.on('click', '[data-category-tab]', (ev) => {
+    selectProblemTagCategory(ev.currentTarget);
+  });
+
+  $problemTagCategoryContainer.children().get().forEach((category) => {
+    const categoryText = $(category).attr('data-category-tab');
+    categories[categoryText].$tag.push($(category));
+    const $problemTagContainer = tagDialog.$dom.find(`[data-category-container="${categoryText}"]`);
+    if (!$problemTagContainer) return;
+    $problemTagContainer.find('.category-filter__subcategory-tag').get().forEach((subcategory) => {
+      const $tag = $(subcategory);
+      categories[categoryText].children[$tag.attr('data-subcategory')].$tag.push($tag);
+    });
   });
 }
 
@@ -244,244 +272,44 @@ function processElement(ele) {
   createHint('Hint::icon::difficulty', $(ele).find('th.col--difficulty'));
 }
 
-function addSelectedDescriptorHighlight(ele) {
-  $(ele).addClass('selected');
-  $(ele).append('<span class="icon icon-check"></span>');
-}
-
-function removeSelectedDescriptorHighlight(ele) {
-  $(ele).removeClass('selected');
-  $(ele).find('.icon-check').remove();
-}
-
-function selectDescriptor(name, ele) {
-  const value = $(ele).attr(`data-problem-${name}`);
-  if (!value) return;
-  selectedDescriptors[name].add(value);
-  addSelectedDescriptorHighlight(ele);
-}
-
-function deselectDescriptor(name, ele) {
-  const value = $(ele).attr(`data-problem-${name}`);
-  if (!value) return;
-  if (selectedDescriptors[name].has(value)) {
-    selectedDescriptors[name].delete(value);
-    removeSelectedDescriptorHighlight(ele);
-  }
-}
-
-function handleSelectDescriptor(name, ev) {
-  const value = $(ev.currentTarget).attr(`data-problem-${name}`);
-  if (!value) return;
-  if (selectedDescriptors[name].has(value)) {
-    deselectDescriptor(name, ev.currentTarget);
-  } else {
-    selectDescriptor(name, ev.currentTarget);
-  }
-}
-
-function toggleProblemTagDialog() {
-  const $problemTagDialog = $('[data-search-dialog]');
-  if (!$problemTagDialog) return;
-  $problemTagDialog.toggleClass('hide');
-}
-
-function clearSelectedProblemTagCategory() {
-  const $problemTagCategoryContainer = $('[data-problem-tag-category-container]');
-  if (!$problemTagCategoryContainer) return;
-  $problemTagCategoryContainer.children().removeClass('selected');
-
-  const $problemTagContainer = $('[data-problem-tag-container]');
-  if (!$problemTagContainer) return;
-  $problemTagContainer.addClass('hide');
-}
-
-function selectProblemTagCategory(ele) {
-  clearSelectedProblemTagCategory();
-  const value = $(ele).attr('data-problem-tag-category');
-  if (!value) return;
-  $(ele).addClass('selected');
-  const $problemTagContainer = $(`[data-problem-tag-container="${value}"]`);
-  if (!$problemTagContainer) return;
-  $problemTagContainer.removeClass('hide');
-}
-
-function removeSelectedTagHighlight(ele) {
-  $(ele).removeClass('selected');
-  $(ele).find('.icon-close').remove();
-}
-
-function addSelectedTagHighlight(ele) {
-  $(ele).addClass('selected');
-  $(ele).append(`
-    <span class="icon icon-close"></span>
-  `);
-}
-
-function toggleSelectedTagElement(value, tag) {
-  const $problemTagSelectedContainer = $(`[data-problem-tag-selected-container="${value}"]`);
-  if (!$problemTagSelectedContainer) return;
-  const $problemTagSelected = $problemTagSelectedContainer.find(`[data-problem-tag-selected="${tag}"]`);
-  if (!$problemTagSelected) return;
-  $problemTagSelected.toggleClass('hide');
-}
-
-function toggleSelectedTagElementOuter(value, tag) {
-  const $problemTagSelectedContainer = $('[data-problem-tag-selected-container-outer');
-  if (!$problemTagSelectedContainer) return;
-  const $problemTagSelected = $problemTagSelectedContainer.find(`[data-problem-tag-selected-outer="${tag}"]`);
-  if (!$problemTagSelected) return;
-  $problemTagSelected.toggleClass('hide');
-}
-
-function updateSelectedTagCount(category) {
-  const $problemTagCategoryContainer = $(`[data-problem-tag-category="${category}"]`);
-  if (!$problemTagCategoryContainer) return;
-  const $problemTagSelectedCount = $problemTagCategoryContainer.find('[data-problem-tag-selected-count]');
-  if (!$problemTagSelectedCount) return;
-  $problemTagSelectedCount.text(selectedDescriptors.tags[category].size);
-  if (selectedDescriptors.tags[category].size > 0) {
-    $problemTagSelectedCount.removeClass('hide');
-  } else {
-    $problemTagSelectedCount.addClass('hide');
-  }
-}
-
-function handleSelectTag(value, ev) {
-  ev.stopPropagation();
-  const tag = $(ev.currentTarget).attr('data-problem-tag');
-  if (!tag) return;
-  if (selectedDescriptors.tags[value].has(tag)) {
-    selectedDescriptors.tags[value].delete(tag);
-    removeSelectedTagHighlight(ev.currentTarget);
-  } else {
-    selectedDescriptors.tags[value].add(tag);
-    addSelectedTagHighlight(ev.currentTarget);
-  }
-  toggleSelectedTagElement(value, tag);
-  toggleSelectedTagElementOuter(value, tag);
-  updateSelectedTagCount(value);
-}
-
-function handleDeselectTag(value, ev, tag = null) {
-  ev.stopPropagation();
-  tag ||= $(ev.currentTarget).attr('data-problem-tag-selected');
-  selectedDescriptors.tags[value].delete(tag);
-  removeSelectedTagHighlight($(`[data-problem-tag="${tag}"]`));
-  toggleSelectedTagElement(value, tag);
-  toggleSelectedTagElementOuter(value, tag);
-  updateSelectedTagCount(value);
-}
-
-function clearSelectedDescriptors() {
-  const $problemTypeContainer = $('[data-problem-type-container]');
-  if (!$problemTypeContainer) return;
-  removeSelectedDescriptorHighlight($problemTypeContainer.children());
-
-  const $problemDifficultyContainer = $('[data-problem-difficulty-container]');
-  if (!$problemDifficultyContainer) return;
-  removeSelectedDescriptorHighlight($problemDifficultyContainer.children());
-
-  selectedDescriptors.type.clear();
-  selectedDescriptors.difficulty.clear();
-
-  for (const category in selectedDescriptors.tags) {
-    const $problemTagContainer = $(`[data-problem-tag-container="${category}"]`);
-    if (!$problemTagContainer) continue;
-    for (const tag of selectedDescriptors.tags[category]) {
-      removeSelectedTagHighlight($problemTagContainer.find(`[data-problem-tag="${tag}"]`));
-      toggleSelectedTagElement(category, tag);
-      toggleSelectedTagElementOuter(category, tag);
-    }
-    selectedDescriptors.tags[category].clear();
-  }
-}
-
-function fallbackToDefaultDescriptors() {
-  const $problemTypeContainer = $('[data-problem-type-container]');
-  if (!$problemTypeContainer) return;
-  selectDescriptor('type', $problemTypeContainer.children().first());
-  const $problemDifficultyContainer = $('[data-problem-difficulty-container]');
-  if (!$problemDifficultyContainer) return;
-  selectDescriptor('difficulty', $problemDifficultyContainer.children().first());
-  const $problemTagCategoryContainer = $('[data-problem-tag-category-container]');
-  if (!$problemTagCategoryContainer) return;
-  selectProblemTagCategory($problemTagCategoryContainer.children().first());
-}
-
-function buildDescriptorFilter() {
-  fallbackToDefaultDescriptors();
-
-  const $problemTypeContainer = $('[data-problem-type-container]');
-  if (!$problemTypeContainer) return;
-  $problemTypeContainer.on('click', '[data-problem-type]', (ev) => handleSelectDescriptor('type', ev));
-  const $problemDifficultyContainer = $('[data-problem-difficulty-container]');
-  if (!$problemDifficultyContainer) return;
-  $problemDifficultyContainer.on('click', '[data-problem-difficulty]', (ev) => handleSelectDescriptor('difficulty', ev));
-
-  const $problemStatContainer = $('[data-fragment-id="problem_stat"]');
-  if (!$problemStatContainer) return;
-  $problemStatContainer.children('.link').on('click', (ev) => {
-    clearSelectedDescriptors();
-    selectDescriptor('type', $problemTypeContainer.children().first());
-    selectDescriptor('difficulty', $problemDifficultyContainer.children().first());
-  });
-
-  const $searchDialog = $('[data-search-dialog]');
-  if (!$searchDialog) return;
-  $searchDialog.on('click', (ev) => {
-    toggleProblemTagDialog();
-  });
-  $searchDialog.on('click', '.dialog__content', (ev) => {
-    ev.stopPropagation();
-  });
-
-  const $problemTagDialogButton = $('[data-problem-tag-dialog-button]');
-  if (!$problemTagDialogButton) return;
-  $problemTagDialogButton.on('click', (ev) => {
-    toggleProblemTagDialog();
-  });
-
-  const $problemTagCategoryContainer = $('[data-problem-tag-category-container]');
-  if (!$problemTagCategoryContainer) return;
-  $problemTagCategoryContainer.on('click', '[data-problem-tag-category]', (ev) => {
-    selectProblemTagCategory(ev.currentTarget);
-  });
-
-  $problemTagCategoryContainer.children().each((index, ele) => {
-    const value = $(ele).attr('data-problem-tag-category');
-    if (!value) return;
-    selectedDescriptors.tags[value] = new Set();
-    const $problemTagContainer = $(`[data-problem-tag-container="${value}"]`);
-    if (!$problemTagContainer) return;
-    $problemTagContainer.on('click', '[data-problem-tag]', (ev) => {
-      handleSelectTag(value, ev);
-    });
-
-    const $problemTagSelectedContainer = $(`[data-problem-tag-selected-container="${value}"]`);
-    if (!$problemTagSelectedContainer) return;
-    $problemTagSelectedContainer.on('click', '[data-problem-tag-selected]', (ev) => {
-      handleDeselectTag(value, ev);
-    });
-  });
-
-  const $problemTagSelectedContainerOuter = $('[data-problem-tag-selected-container-outer]');
-  if (!$problemTagSelectedContainerOuter) return;
-  $problemTagSelectedContainerOuter.on('click', '[data-problem-tag-selected-outer]', (ev) => {
-    const value = $(ev.currentTarget).attr('data-problem-tag-category-outer');
-    if (!value) return;
-    const tag = $(ev.currentTarget).attr('data-problem-tag-selected-outer');
-    handleDeselectTag(value, ev, tag);
-  });
-}
-
 const page = new NamedPage(['problem_main'], () => {
   const $body = $('body');
   $body.addClass('display-mode');
   $('.section.display-mode').removeClass('display-mode');
   buildCategoryFilter();
+  buildDisplayCategory();
+  buildCategoryDialog();
   parseCategorySelection();
-  buildDescriptorFilter();
+  $(document).on('click', '.category-filter__category-tag', (ev) => {
+    if (ev.shiftKey || ev.metaKey || ev.ctrlKey) return;
+    const category = $(ev.currentTarget).text();
+    const treeItem = categories[category];
+    // the effect should be cancelSelect if it is shown as selected when clicking
+    const shouldSelect = treeItem.$tag.hasClass('selected') ? false : !treeItem.select;
+    treeItem.select = shouldSelect;
+    dirtyCategories.push({ type: 'category', category });
+    if (!shouldSelect) {
+      // de-select children
+      _.forEach(treeItem.children, (treeSubItem, subcategory) => {
+        if (treeSubItem.select) {
+          treeSubItem.select = false;
+          dirtyCategories.push({ type: 'subcategory', subcategory, category });
+        }
+      });
+    }
+    updateSelection();
+    ev.preventDefault();
+  });
+  $(document).on('click', '.category-filter__subcategory-tag', (ev) => {
+    if (ev.shiftKey || ev.metaKey || ev.ctrlKey) return;
+    const subcategory = $(ev.currentTarget).text();
+    const category = $(ev.currentTarget).attr('data-category');
+    const treeItem = categories[category].children[subcategory];
+    treeItem.select = !treeItem.select;
+    dirtyCategories.push({ type: 'subcategory', subcategory, category });
+    updateSelection();
+    ev.preventDefault();
+  });
   $(document).on('click', '[name="leave-edit-mode"]', () => {
     $body.removeClass('edit-mode').addClass('display-mode');
   });
@@ -510,6 +338,10 @@ const page = new NamedPage(['problem_main'], () => {
   });
   $(document).on('vjContentNew', (e) => processElement(e.target));
   processElement(document);
+  $('[data-problem-tag-dialog-button]').on('click', (ev) => {
+    ev.preventDefault();
+    tagDialog.clear().open();
+  });
 });
 
 export default page;

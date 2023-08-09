@@ -1,43 +1,23 @@
-<div class="search-dialog hide" data-search-dialog>
-  <div class="dialog__content">
-    <div class="dialog--select__header">      
-      <div class="dialog--select__header--list" data-problem-tag-category-container>
-        {%- for problemTagCategory in Object.keys((model.system.get('problem.descriptors')|parseYaml)["标签类型"]) -%}
-        <div class="dialog--select__header--item text-align-vertical" data-problem-tag-category="{{problemTagCategory}}">
-          {{ problemTagCategory }}
-          <div class="red-dot hide" data-problem-tag-selected-count>
-          </div>
+<div style="display: none" class="dialog--category-filter">
+  <div>
+    <div class="dialog--category-filter__header">      
+      <div class="flex-row flex-warp flex-cross-center" data-category-tab-container>
+        {%- for category in Object.keys((model.system.get('problem.categories')|parseYaml)) -%}
+        <div class="dialog--category-filter__header--item text-align-vertical" data-category-tab="{{category}}">
+        {{ category }}
         </div>
         {%- endfor -%}
       </div>
     </div>
-    <div class="dialog--select__body">
-      {%- for problemTagCategory in Object.keys((model.system.get('problem.descriptors')|parseYaml)["标签类型"]) -%}
-      <div class="dialog--select__body--tags hide" data-problem-tag-container="{{problemTagCategory}}">
-        <div class="dialog--select__body--tags__selected">
-          <h2>{{ _('SelectedTags') }}: </h2>
-          <div data-problem-tag-selected-container="{{problemTagCategory}}" class="list">
-            {%- for problemTag in (model.system.get('problem.descriptors')|parseYaml)["标签类型"][problemTagCategory] -%}
-            <div class="item hide selected" data-problem-tag-selected="{{problemTag}}">
-              {{ problemTag }}
-              <span class="icon icon-close"></span>
-            </div>
-            {%- endfor -%}            
-          </div>
-        </div>
-        <div class="dialog--select__body--divider"></div>
-        <div class="dialog--select__body--tags__all">
-          <h2>{{ problemTagCategory }}: </h2>
-          <div class="list">
-            {%- for problemTag in (model.system.get('problem.descriptors')|parseYaml)["标签类型"][problemTagCategory] -%}
-            <div class="item" data-problem-tag="{{problemTag}}">
-              {{ problemTag }}
-            </div>
-            {%- endfor -%}
-          </div>  
-        </div>
-      </div>
-      {%- endfor -%}
-    </div>
+    {%- for category, sub_categories in model.system.get('problem.categories')|parseYaml  -%}
+    <ol class="section__body chip-list dialog--category-filter__body hide" data-category-container="{{category}}">
+      <h2 class="section__title">{{ category }}: </h2>
+      <div class="flex-row flex-warp flex-cross-center">
+        {%- for subcategory in sub_categories -%}
+        <span class="category-filter__subcategory-tag chip-list__item" data-subcategory="{{subcategory}}" data-category="{{category}}">{{ subcategory }}</span>
+        {%- endfor -%}
+      </div>  
+    </ol>
+    {%- endfor -%}
   </div>
 </div>
